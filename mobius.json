@@ -1,0 +1,45 @@
+{
+  "id": "competitions",
+  "name": "Competitions",
+  "version": "0.1.0",
+  "description": "Run private, card-based competitions with submissions, reviews, scores, and leaderboards.",
+  "entry": "index.jsx",
+  "icon": "icon.png",
+  "offline_capable": false,
+  "permissions": {
+    "identity_manage": true
+  },
+  "source_files": [
+    "domain.py",
+    "service.py",
+    "peer_transport.py",
+    "net_utils.py",
+    "dns_resolver.py",
+    "theme.js",
+    "ui.jsx",
+    "ChallengeForms.jsx",
+    "CardView.jsx"
+  ],
+  "service": {
+    "id": "competitions",
+    "entry": "service.py",
+    "access": "public"
+  },
+  "schedule": {
+    "default": "* * * * *",
+    "user_configurable": false,
+    "job": "review_job.py"
+  },
+  "store": {
+    "tagline": "Run private challenges and celebrate the best work.",
+    "description": "Competitions helps organizers run invitation-only challenges from one place. Create challenge cards with clear requirements, collect text, links, images, or pull-request proofs, review each entry, and score competitors on a shared leaderboard. People only see challenges they were invited to.",
+    "hero": "static/store/hero.svg",
+    "screenshots": [
+      {
+        "src": "static/store/overview.svg",
+        "alt": "Competitions home screen showing challenge cards with review modes and submission limits.",
+        "label": "Set up clear challenge cards"
+      }
+    ]
+  }
+}
