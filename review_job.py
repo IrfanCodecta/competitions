@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import time
 import uuid
+import sys
 import httpx
 from domain import Competition, Problem, connect, score, text
 
@@ -75,8 +76,15 @@ def run(root,call=None):
             target.update(agent_score=value,agent_rationale=rationale,agent_error=error,agent_reviewed_at=time.time())
             engine.put(c)
 
-if __name__=='__main__':
-    # Managed supervisor supplies the app's own numeric storage directory.
+def main(argv=None):
+    # The managed runner passes the installation id as argv[1], not APP_ID.
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) != 1 or not args[0].isdigit():
+        raise SystemExit('Usage: review_job.py <app-id>')
+    root = Path(os.environ.get('DATA_DIR', '/data')) / 'apps' / args[0]
     from invite_retry import run as retry_invitations
-    retry_invitations()
-    run(Path(os.environ.get('APP_STORAGE_DIR') or '/data/apps/'+os.environ['APP_ID']))
+    retry_invitations(root)
+    run(root)
+
+if __name__=='__main__':
+    main()

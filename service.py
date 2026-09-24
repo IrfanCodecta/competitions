@@ -89,7 +89,7 @@ def execute(action,b,actor,admin,request_id):
     require(isinstance(request_id,str) and re.fullmatch(r'[a-f0-9-]{16,64}',request_id),'A request identifier is required.')
     stamp=digest({'actor':actor,'admin':admin,'action':action,'body':b})
     # Read operations do not retain copies of attachments as replay receipts.
-    writes=action in ('create','invite','publish','add_card','submit','decide','score','retry_agent')
+    writes=action in ('create','invite','publish','add_card','submit','decide','score','retry_agent','accept_invite','decline_invite')
     with connect(DB_PATH) as db:
         db.execute('BEGIN IMMEDIATE' if writes else 'BEGIN')
         if writes:
@@ -112,7 +112,8 @@ async def main(req):
         return execute('invitations',{},p['handle'],False,b.get('request_id') or secrets.token_hex(16))
     if path=='command' and req['method']=='POST' and b.get('action')=='respond_invitation':
         with connect(DB_PATH) as db:
-            return respond_invitation(db,p['handle'],b.get('invitation_id'),b.get('status'))
+            response=b.get('body') or {}
+            return respond_invitation(db,p['handle'],response.get('invitation_id'),response.get('status'))
     if path=='context' and req['method']=='GET':
         with connect(DB_PATH) as db:hosts=[r[0] for r in db.execute('SELECT host FROM hosts')]
         return {'identity':p,'host':HOST,'hosts':hosts}
@@ -128,9 +129,9 @@ async def main(req):
             hosts=await directory(who); delivered=0
             with connect(DB_PATH) as db: queue_invitation(db,payload)
             for destination in hosts:
-                envelope={'schema':1,'method':'POST','path':'invitation','public':True,'body':payload}
                 try:
-                    await peer(destination,'invitation',envelope);delivered+=1
+                    receipt=await peer(destination,'invitation',payload)
+                    if receipt.get('received') is True and receipt.get('invitation_id') == invitation_id:delivered+=1
                 except Exception: continue
             if delivered:
                 with connect(DB_PATH) as db: db.execute('DELETE FROM invite_outbox WHERE id=?',(invitation_id,))

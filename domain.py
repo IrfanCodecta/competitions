@@ -87,7 +87,8 @@ def connect(path):
     return db
 
 def save_invitation(db, invitation):
-    db.execute('INSERT INTO invitations(id,document) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET document=excluded.document',(invitation['id'],json.dumps(invitation)))
+    # A lost delivery acknowledgment must not reset an accepted/declined invite.
+    db.execute('INSERT OR IGNORE INTO invitations(id,document) VALUES(?,?)',(invitation['id'],json.dumps(invitation)))
 
 def list_invitations(db, actor):
     out=[]
@@ -148,10 +149,13 @@ class Competition:
         if action in ('accept_invite','decline_invite'):
             require(not self.admin,'Only an invited competitor can respond to this invitation.',403)
             inv=next((x for x in c.setdefault('invitations',[]) if x.get('id')==b.get('invitation_id') and x.get('handle')==self.actor),None)
-            require(inv is not None and inv.get('status')=='pending','This invitation is no longer available.',409)
+            require(inv is not None,'This invitation is no longer available.',409)
+            desired='accepted' if action=='accept_invite' else 'declined'
+            if inv.get('status')==desired:return {'accepted':desired=='accepted','invitation_id':inv['id']}
+            require(inv.get('status')=='pending','This invitation is no longer available.',409)
             if action=='accept_invite':
-                require(self.actor not in c['competitors'],'You are already in this challenge.',409)
-                inv['status']='accepted';c['competitors'].append(self.actor)
+                inv['status']='accepted'
+                if self.actor not in c['competitors']:c['competitors'].append(self.actor)
             else: inv['status']='declined'
             self.put(c);return {'accepted':action=='accept_invite','invitation_id':inv['id']}
         require(self.visible(c) and (self.admin or c['published']),'You are not invited to this challenge.',403)
@@ -165,7 +169,6 @@ class Competition:
                 require(not any(x.get('handle')==who and x.get('status')=='pending' for x in invitations),'That competitor already has a pending invitation.',409)
                 if b.get('invitation_id'):
                     invitations.append({'id':text(b.get('invitation_id'),'Invitation ID',80),'handle':who,'organizer':self.actor,'status':'pending','created_at':datetime.now(timezone.utc).isoformat()})
-                    c['competitors'].append(who)
                 else:
                     c['competitors'].append(who)
             elif action=='publish':
