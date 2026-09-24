@@ -13,7 +13,7 @@ legacy `competitions.json` is left untouched, not silently imported as real data
   competitors can submit to every card; no organizer hostname needs to be
   copied into a form.
 - Create a draft, invite people, add one or more cards, then open the challenge
-  after at least one invite is accepted. Dates are UTC calendar dates; end date
+  while invitations are pending. People can accept after it opens. Dates are UTC calendar dates; end date
   is inclusive. Nobody can self-enroll.
 - Accepting an invitation opens the organizer’s challenge automatically. The
   organizer hostname is carried inside the verified invitation, not copied by

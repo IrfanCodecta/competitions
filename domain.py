@@ -169,7 +169,7 @@ class Competition:
                     c['competitors'].append(who)
             elif action=='publish':
                 require(len(c['cards'])>0,'Add at least one card before opening the challenge.')
-                require(any(self.is_competitor(c) or not any(x.get('handle')==who and x.get('status')=='pending' for x in c.get('invitations',[])) for who in c['competitors']),'At least one competitor must accept the invitation before opening the challenge.')
+                require(bool(c['competitors'] or c.get('invitations')),'Send at least one competitor invitation before opening the challenge.')
                 c['published']=True
             else:
                 types=b.get('types')
