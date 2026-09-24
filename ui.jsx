@@ -2,6 +2,7 @@ import React,{useState} from 'react'
 export function Button({children,primary=false,...p}){return <button className={`cp-btn ${primary?'primary':''}`} {...p}>{children}</button>}
 export function Empty({title,children,action}){return <div className="cp-empty"><h3>{title}</h3><p>{children}</p>{action}</div>}
 export function Tabs({items,value,onChange}){return <nav className="cp-tabs" role="tablist" aria-label="Views">{items.map(([id,label])=><button key={id} role="tab" aria-selected={value===id} className="cp-tab" onClick={()=>onChange(id)}>{label}</button>)}</nav>}
+export function Steps({items}){return <ol className="cp-steps" aria-label="Challenge setup progress">{items.map((item,i)=><li className={`cp-step ${item.done?'done':''} ${item.current?'current':''}`} key={item.label}><span className="cp-stepmark">{item.done?'✓':i+1}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span></li>)}</ol>}
 export function Field({label,hint,children}){return <label className="cp-label">{label}{children}{hint&&<span className="cp-hint">{hint}</span>}</label>}
 export function Upload({label,value,onChange}){
  const [error,setError]=useState(''),[busy,setBusy]=useState(false)

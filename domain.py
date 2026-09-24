@@ -117,6 +117,7 @@ class Competition:
     def put(self,c):
         self.db.execute('INSERT INTO challenges VALUES (?,?) ON CONFLICT(id) DO UPDATE SET document=excluded.document',(c['id'],json.dumps(c)))
     def is_competitor(self,c):return self.actor in c['competitors'] and not any(x.get('handle')==self.actor and x.get('status')=='pending' for x in c.get('invitations',[]))
+    def accepted_people(self,c):return [who for who in c['competitors'] if not any(x.get('handle')==who and x.get('status')=='pending' for x in c.get('invitations',[]))]
     def is_reviewer(self,card):return self.actor in card['reviewers']
     def visible(self,c):return self.admin or self.is_competitor(c) or any(self.is_reviewer(x) for x in c['cards'])
     def card(self,c,kid):
@@ -128,7 +129,7 @@ class Competition:
         out['admin']=self.admin
         out['competitor']=self.is_competitor(c)
         out['cards']=[{k:v for k,v in card.items() if k!='reviewers'}|{'can_review':self.admin or self.is_reviewer(card)} for card in c['cards'] if self.admin or (c['published'] and (self.is_competitor(c) or self.is_reviewer(card)))]
-        if self.admin: out['competitors']=[who for who in c['competitors'] if not any(x.get('handle')==who and x.get('status')=='pending' for x in c.get('invitations',[]))]
+        if self.admin: out['competitors']=self.accepted_people(c)
         if self.admin: out['invitations']=c.get('invitations',[])
         return out
     def run(self,action,b):
@@ -188,7 +189,7 @@ class Competition:
         if action=='leaderboard':
             require(self.admin,'The leaderboard is for the organizer only.',403)
             rows=[]
-            for who in c['competitors']:
+            for who in self.accepted_people(c):
                 values={x['id']:c['scores'].get(x['id'],{}).get(who) for x in c['cards']}
                 present=[v for v in values.values() if v is not None]
                 rows.append({'handle':who,'scores':{k:v/10 if v is not None else None for k,v in values.items()},'total':sum(present)/10 if present else None,'scored':len(present)})
@@ -206,8 +207,8 @@ class Competition:
             return self.entry(s,reference=self.admin or self.is_reviewer(card),full=True)
         if action in ('people','person'):
             require(self.admin or self.is_competitor(c) or self.is_reviewer(card),'Access denied.',403)
-            if action=='people':return {'people':[{'handle':who,'count':sum(s['competitor']==who for s in subs),'score':c['scores'].get(card['id'],{}).get(who)/10 if self.admin and who in c['scores'].get(card['id'],{}) else None} for who in c['competitors']]}
-            who=b.get('person');require(who in c['competitors'],'Competitor not found.',404)
+            if action=='people':return {'people':[{'handle':who,'count':sum(s['competitor']==who for s in subs),'score':c['scores'].get(card['id'],{}).get(who)/10 if self.admin and who in c['scores'].get(card['id'],{}) else None} for who in self.accepted_people(c)]}
+            who=b.get('person');require(who in self.accepted_people(c),'Competitor not found.',404)
             return {'handle':who,'submissions':[self.entry(s,reference=self.admin or self.is_reviewer(card)) for s in subs if s['competitor']==who]}
         if action=='submit':
             require(self.is_competitor(c),'Only invited competitors can submit.',403)
