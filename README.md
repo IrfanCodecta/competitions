@@ -8,11 +8,16 @@ legacy `competitions.json` is left untouched, not silently imported as real data
 
 - The local signed-in installation owner organizes its challenges. Competitors
   and reviewers use their own installation of this same package.
-- Create a draft, add competitors by their actual Mobius `@handle`, add one or
-  more cards, then open the challenge. Dates are UTC calendar dates; end date
+- Create a draft, invite competitors by their actual Mobius `@handle`, and let
+  each person accept or decline from their own Competitions app. Accepted
+  competitors can submit to every card; no organizer hostname needs to be
+  copied into a form.
+- Create a draft, invite people, add one or more cards, then open the challenge
+  after at least one invite is accepted. Dates are UTC calendar dates; end date
   is inclusive. Nobody can self-enroll.
-- Share the organizer hostname. Invited people choose **Another organizer**,
-  enter that hostname, and see only published challenges they may access.
+- Accepting an invitation opens the organizer’s challenge automatically. The
+  organizer hostname is carried inside the verified invitation, not copied by
+  hand.
 - Human cards require assigned reviewers. All assigned reviewers must approve;
   any rejection rejects the entry. Reviewers may leave comments.
 - AI cards explicitly ask the organizer to authorize model credit. A supervised

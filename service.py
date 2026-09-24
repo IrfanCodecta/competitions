@@ -15,7 +15,7 @@ import sys
 import time
 from urllib.parse import quote, urlsplit
 import httpx
-from domain import Competition, Problem, connect, handle, require
+from domain import Competition, Problem, connect, handle, require, save_invitation, respond_invitation
 from peer_transport import federation_request
 
 ROOT=Path(os.environ['APP_STORAGE_DIR'])
@@ -60,6 +60,14 @@ async def peer(h,path,body=None):
 
 async def public_request(req):
     path=req['path']; b=req.get('body') or {}
+    if path=='invitation' and req['method']=='POST':
+        require(isinstance(b,dict) and set(b)=={'id','sender','organizer','organizer_host','invitee','challenge','title','description','start','end'},'Invalid invitation.')
+        sender=host(b['sender']); organizer=handle(b['organizer']); invitee=handle(b['invitee'])
+        actual=(await profile())['handle'];require(actual==invitee,'This invitation is for another Mobius ID.',403)
+        require(sender in await directory(organizer),'This organizer host is not registered to that Mobius ID.',403)
+        item={**b,'organizer':organizer,'invitee':invitee,'status':'pending','received_at':time.time()}
+        with connect(DB_PATH) as db: save_invitation(db,item)
+        return {'received':True,'invitation_id':item['id']}
     if path.startswith('proof/') and req['method']=='GET':
         key=path[6:];require(bool(re.fullmatch(r'[a-f0-9]{64}',key)),'Proof not found.',404)
         with connect(DB_PATH) as db:
@@ -100,6 +108,11 @@ async def main(req):
     require(scope in ('owner','app','agent'),'Please open Competitions from your signed-in Möbius.',403)
     p=await profile()
     path=req.get('path');b=req.get('body') or {}
+    if path=='command' and req['method']=='POST' and b.get('action')=='invitations':
+        return execute('invitations',{},p['handle'],False,b.get('request_id') or secrets.token_hex(16))
+    if path=='command' and req['method']=='POST' and b.get('action')=='respond_invitation':
+        with connect(DB_PATH) as db:
+            return respond_invitation(db,p['handle'],b.get('invitation_id'),b.get('status'))
     if path=='context' and req['method']=='GET':
         with connect(DB_PATH) as db:hosts=[r[0] for r in db.execute('SELECT host FROM hosts')]
         return {'identity':p,'host':HOST,'hosts':hosts}
@@ -107,7 +120,18 @@ async def main(req):
     require(isinstance(b,dict),'Invalid command.')
     target=b.get('host') or HOST; action=b.get('action'); body=b.get('body') or {}; rid=b.get('request_id')
     if target==HOST:
-        if action=='invite':await directory(body.get('handle'))
+        if action=='invite':
+            who=handle(body.get('handle')); invitation_id=secrets.token_hex(20); body={**body,'invitation_id':invitation_id}
+            with connect(DB_PATH) as db:
+                challenge=Competition(db,p['handle'],admin=True).get(body.get('challenge'))
+            payload={'id':invitation_id,'sender':HOST,'organizer':p['handle'],'organizer_host':HOST,'invitee':who,'challenge':challenge['id'],'title':challenge['title'],'description':challenge['description'],'start':challenge['start'],'end':challenge['end']}
+            hosts=await directory(who); delivered=0
+            for destination in hosts:
+                envelope={'schema':1,'method':'POST','path':'invitation','public':True,'body':payload}
+                try:
+                    await peer(destination,'invitation',envelope);delivered+=1
+                except Exception: continue
+            require(delivered>0,'That Mobius ID could not receive an invitation right now. Try again when their installation is online.',502)
         if action=='add_card' and body.get('review')=='human':
             for who in body.get('reviewers',[]):await directory(who)
         return execute(action,body,p['handle'],True,rid)

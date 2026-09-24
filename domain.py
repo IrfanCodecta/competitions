@@ -81,8 +81,26 @@ def connect(path):
     CREATE TABLE IF NOT EXISTS proofs(id TEXT PRIMARY KEY, document TEXT NOT NULL, expires REAL NOT NULL);
     CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, digest TEXT NOT NULL, result TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS hosts(host TEXT PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS invitations(id TEXT PRIMARY KEY, document TEXT NOT NULL);
     ''')
     return db
+
+def save_invitation(db, invitation):
+    db.execute('INSERT INTO invitations(id,document) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET document=excluded.document',(invitation['id'],json.dumps(invitation)))
+
+def list_invitations(db, actor):
+    out=[]
+    for row in db.execute('SELECT document FROM invitations'):
+        item=json.loads(row[0])
+        if item.get('invitee')==actor and item.get('status','pending')=='pending': out.append(item)
+    return out
+
+def respond_invitation(db, actor, invitation_id, status):
+    row=db.execute('SELECT document FROM invitations WHERE id=?',(invitation_id,)).fetchone()
+    require(row is not None,'Invitation not found.',404)
+    item=json.loads(row[0]);require(item.get('invitee')==actor,'This invitation is not for you.',403)
+    require(status in ('accepted','declined'),'Choose accept or decline.')
+    item['status']=status;db.execute('UPDATE invitations SET document=? WHERE id=?',(json.dumps(item),invitation_id));return item
 
 class Competition:
     def __init__(self,db,actor,*,admin=False,today=None):
@@ -94,7 +112,7 @@ class Competition:
         return json.loads(row[0])
     def put(self,c):
         self.db.execute('INSERT INTO challenges VALUES (?,?) ON CONFLICT(id) DO UPDATE SET document=excluded.document',(c['id'],json.dumps(c)))
-    def is_competitor(self,c):return self.actor in c['competitors']
+    def is_competitor(self,c):return self.actor in c['competitors'] and not any(x.get('handle')==self.actor and x.get('status')=='pending' for x in c.get('invitations',[]))
     def is_reviewer(self,card):return self.actor in card['reviewers']
     def visible(self,c):return self.admin or self.is_competitor(c) or any(self.is_reviewer(x) for x in c['cards'])
     def card(self,c,kid):
@@ -106,10 +124,12 @@ class Competition:
         out['admin']=self.admin
         out['competitor']=self.is_competitor(c)
         out['cards']=[{k:v for k,v in card.items() if k!='reviewers'}|{'can_review':self.admin or self.is_reviewer(card)} for card in c['cards'] if self.admin or (c['published'] and (self.is_competitor(c) or self.is_reviewer(card)))]
-        if self.admin: out['competitors']=c['competitors']
+        if self.admin: out['competitors']=[who for who in c['competitors'] if not any(x.get('handle')==who and x.get('status')=='pending' for x in c.get('invitations',[]))]
+        if self.admin: out['invitations']=c.get('invitations',[])
         return out
     def run(self,action,b):
         require(isinstance(b,dict),'Invalid request.')
+        if action=='invitations': return {'invitations':list_invitations(self.db,self.actor)}
         if action=='list':
             return {'challenges':[dict(self.summary(c),cover=None) for row in self.db.execute('SELECT document FROM challenges') if self.visible(c:=json.loads(row[0])) and (self.admin or c['published'])], 'actor':self.actor,'admin':self.admin,'field_types':FIELD_TYPES}
         if action=='create':
@@ -117,9 +137,18 @@ class Competition:
             start,end=b.get('start'),b.get('end')
             try: require(date.fromisoformat(start)<=date.fromisoformat(end),'End date must not be before start date.')
             except (ValueError,TypeError): raise Problem(400,'Choose valid start and end dates.')
-            c={'id':uuid.uuid4().hex,'title':text(b.get('title'),'Title',160),'description':text(b.get('description'),'Description'),'start':start,'end':end,'cover':image(b['cover']) if b.get('cover') else None,'published':False,'competitors':[],'cards':[],'submissions':[],'scores':{}}
+            c={'id':uuid.uuid4().hex,'title':text(b.get('title'),'Title',160),'description':text(b.get('description'),'Description'),'start':start,'end':end,'cover':image(b['cover']) if b.get('cover') else None,'published':False,'competitors':[],'invitations':[],'cards':[],'submissions':[],'scores':{}}
             self.put(c);return self.summary(c)
         c=self.get(b.get('challenge'))
+        if action in ('accept_invite','decline_invite'):
+            require(not self.admin,'Only an invited competitor can respond to this invitation.',403)
+            inv=next((x for x in c.setdefault('invitations',[]) if x.get('id')==b.get('invitation_id') and x.get('handle')==self.actor),None)
+            require(inv is not None and inv.get('status')=='pending','This invitation is no longer available.',409)
+            if action=='accept_invite':
+                require(self.actor not in c['competitors'],'You are already in this challenge.',409)
+                inv['status']='accepted';c['competitors'].append(self.actor)
+            else: inv['status']='declined'
+            self.put(c);return {'accepted':action=='accept_invite','invitation_id':inv['id']}
         require(self.visible(c) and (self.admin or c['published']),'You are not invited to this challenge.',403)
         if action=='challenge': return self.summary(c)
         if action in ('invite','publish','add_card'):
@@ -127,10 +156,16 @@ class Competition:
             if action=='invite':
                 who=handle(b.get('handle'))
                 require(who not in c['competitors'],'That competitor is already added.',409)
-                c['competitors'].append(who)
+                invitations=c.setdefault('invitations',[])
+                require(not any(x.get('handle')==who and x.get('status')=='pending' for x in invitations),'That competitor already has a pending invitation.',409)
+                if b.get('invitation_id'):
+                    invitations.append({'id':text(b.get('invitation_id'),'Invitation ID',80),'handle':who,'organizer':self.actor,'status':'pending','created_at':datetime.now(timezone.utc).isoformat()})
+                    c['competitors'].append(who)
+                else:
+                    c['competitors'].append(who)
             elif action=='publish':
                 require(len(c['cards'])>0,'Add at least one card before opening the challenge.')
-                require(len(c['competitors'])>0,'Add competitors before opening the challenge.')
+                require(any(self.is_competitor(c) or not any(x.get('handle')==who and x.get('status')=='pending' for x in c.get('invitations',[])) for who in c['competitors']),'At least one competitor must accept the invitation before opening the challenge.')
                 c['published']=True
             else:
                 types=b.get('types')
