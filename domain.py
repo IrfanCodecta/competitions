@@ -82,6 +82,7 @@ def connect(path):
     CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, digest TEXT NOT NULL, result TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS hosts(host TEXT PRIMARY KEY);
     CREATE TABLE IF NOT EXISTS invitations(id TEXT PRIMARY KEY, document TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS invite_outbox(id TEXT PRIMARY KEY, document TEXT NOT NULL, next_attempt REAL NOT NULL, attempts INTEGER NOT NULL DEFAULT 0);
     ''')
     return db
 
@@ -101,6 +102,9 @@ def respond_invitation(db, actor, invitation_id, status):
     item=json.loads(row[0]);require(item.get('invitee')==actor,'This invitation is not for you.',403)
     require(status in ('accepted','declined'),'Choose accept or decline.')
     item['status']=status;db.execute('UPDATE invitations SET document=? WHERE id=?',(json.dumps(item),invitation_id));return item
+
+def queue_invitation(db, invitation):
+    db.execute('INSERT OR IGNORE INTO invite_outbox(id,document,next_attempt,attempts) VALUES(?,?,?,0)',(invitation['id'],json.dumps(invitation),0.0))
 
 class Competition:
     def __init__(self,db,actor,*,admin=False,today=None):

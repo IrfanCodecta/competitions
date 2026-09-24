@@ -15,7 +15,7 @@ import sys
 import time
 from urllib.parse import quote, urlsplit
 import httpx
-from domain import Competition, Problem, connect, handle, require, save_invitation, respond_invitation
+from domain import Competition, Problem, connect, handle, require, save_invitation, respond_invitation, queue_invitation
 from peer_transport import federation_request
 
 ROOT=Path(os.environ['APP_STORAGE_DIR'])
@@ -126,12 +126,14 @@ async def main(req):
                 challenge=Competition(db,p['handle'],admin=True).get(body.get('challenge'))
             payload={'id':invitation_id,'sender':HOST,'organizer':p['handle'],'organizer_host':HOST,'invitee':who,'challenge':challenge['id'],'title':challenge['title'],'description':challenge['description'],'start':challenge['start'],'end':challenge['end']}
             hosts=await directory(who); delivered=0
+            with connect(DB_PATH) as db: queue_invitation(db,payload)
             for destination in hosts:
                 envelope={'schema':1,'method':'POST','path':'invitation','public':True,'body':payload}
                 try:
                     await peer(destination,'invitation',envelope);delivered+=1
                 except Exception: continue
-            require(delivered>0,'That Mobius ID could not receive an invitation right now. Try again when their installation is online.',502)
+            if delivered:
+                with connect(DB_PATH) as db: db.execute('DELETE FROM invite_outbox WHERE id=?',(invitation_id,))
         if action=='add_card' and body.get('review')=='human':
             for who in body.get('reviewers',[]):await directory(who)
         return execute(action,body,p['handle'],True,rid)

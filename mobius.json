@@ -15,6 +15,7 @@
     "peer_transport.py",
     "net_utils.py",
     "dns_resolver.py",
+    "invite_retry.py",
     "theme.js",
     "ui.jsx",
     "ChallengeForms.jsx",

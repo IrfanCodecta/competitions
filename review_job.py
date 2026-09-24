@@ -77,4 +77,6 @@ def run(root,call=None):
 
 if __name__=='__main__':
     # Managed supervisor supplies the app's own numeric storage directory.
+    from invite_retry import run as retry_invitations
+    retry_invitations()
     run(Path(os.environ.get('APP_STORAGE_DIR') or '/data/apps/'+os.environ['APP_ID']))
